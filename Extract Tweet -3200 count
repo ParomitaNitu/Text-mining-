@@ -1,0 +1,60 @@
+#Twitter only allows access to a users most recent 3240 tweets with this method
+#SOURCE_CODE: https://gist.github.com/yanofsky/5436496#file-tweet_dumper-py-L3
+def get_all_tweets(user):
+
+    auth = tweepy.OAuthHandler(consumer_key, consumer_secret)    # Authorization to consumer key and consumer secret  
+    auth.set_access_token(access_token, access_token_secret)     # Access to user's access key and access secret 
+    api = tweepy.API(auth)                                       # Calling api  
+
+    filepath= open('C:/Users/Paromita/Desktop/Travel Recommendation/Tweet Data/user/%s_tweets.csv' % user, 'w',encoding='utf-8', newline="")
+    file = csv.writer(filepath) 
+    file.writerow(["Tweet Id","Tweet Time","Tweet Text","Emojis","@ Tagged/Mentioned","Hashtags","Tweet Favorite Count","Is Retweet","Tweet Retweet Count","URL"])                                                      
+
+    alltweets = []                                                                        #initialize a list to hold all the tweepy Tweets
+    new_tweets = api.user_timeline(screen_name = user,count=200)                          #make initial request for most recent tweets (200 is the maximum allowed count)
+    alltweets.extend(new_tweets)                                                          #save most recent tweets
+    
+    oldest = alltweets[-1].id - 1                                                         #save the id of the oldest tweet less one
+    while len(new_tweets) > 0:                                                            #keep grabbing tweets until there are no tweets left to grab
+                                                                                          #print "getting tweets before %s" % (oldest)
+        new_tweets = api.user_timeline(screen_name = user,count=200,max_id=oldest)        #all subsiquent requests use the max_id param to prevent duplicates
+        alltweets.extend(new_tweets)                                                      #save most recent tweets
+        oldest = alltweets[-1].id - 1                                                     #update the id of the oldest tweet less one
+    
+    for tweet in alltweets:
+        if (tweet.lang=='en'):
+            tweet.id=tweet.id_str
+            text=remove_punctuation(clean_emoji(remove_rt(strip_links(tweet.text))))
+            tag_at=at_tagged(tweet.text)
+            emojis=emo_text(extract_emojis(tweet.text))
+            date=tweet.created_at  
+            fav_count=tweet.favorite_count   #favourites_count
+            #user_location = tweet.user.location
+            #description = tweet.user.description
+            url = ''
+            try:
+                url = tweet.entities['urls'][0]['expanded_url']                
+            except:
+                 pass
+                
+            hashtags = ''
+            try:
+                hashtags = tweet.entities['hashtags']
+                hashtags =[hashtags[i]["text"] for i in range(len(hashtags))]
+                hashtags=remove_punctuation(str(hashtags).strip('[]'))
+                
+            except:
+                 pass
+                
+            if (tweet.text[0:2] != 'RT'):
+                retweet= "No"
+                reT_count=tweet.retweet_count
+                
+            else:
+                retweet= "Yes"
+                reT_count=tweet.retweet_count                                          #Twitter only allows access to a users most recent 3240 tweets with this method
+            
+            #transform the tweepy tweets into a 2D array that will populate the csv	
+            outtweets = [tweet.id,date,text,emojis,tag_at,hashtags,fav_count,retweet,reT_count,url]
+            file.writerow(outtweets)
+    pass
