@@ -1,0 +1,79 @@
+#import libraries 
+import tweepy
+import json,csv
+import re, string
+import emoji
+import codecs
+import urllib,urllib.parse,urllib.request
+
+
+#provide your twitter developer information here
+access_token = "   "
+access_token_secret = "   "
+consumer_key = "   "
+consumer_secret = "    " 
+
+
+# Funtions for cleaning tweets 
+
+# process urls
+def strip_links(text):
+    link_regex    = re.compile('((https?):((//)|(\\\\))+([\w\d:#@%/;$()~_?\+-=\\\.&](#!)?)*)', re.DOTALL)
+    links         = re.findall(link_regex, text)
+    for link in links:
+        text = text.replace(link[0], ', ')
+    t = text.lower()
+    t = re.sub('\d+','',t)
+    t = ' '.join(t.split())
+    return t
+
+#remove rt for a re-tweet
+def remove_rt(text):
+    for separator in  string.punctuation:
+        text = text.replace(separator,' ')
+    words = []
+    for word in text.split():
+        word = word.strip()
+        if word:
+            if (word[0:2]!= "rt"):
+                words.append(word)
+    return ' '.join(words)
+
+
+# Obtain mentions/tags with @
+def at_tagged(text):
+    mention_prefixes = ['@']
+    mention_End_prefixes=[";",":",",","/","_","-","""'""",'"',"€"]   
+    words = []
+    for word in text.split():
+        word = word.strip()
+        if word:
+            if (word[0] in mention_prefixes):
+                word=word.replace(word[0]," ")
+                if (word[-1] in mention_End_prefixes):
+                    word=word.replace(word[-1]," ")
+                words.append(word)
+    return ','.join(words)
+
+#Remove puntuation from tweet text
+def remove_punctuation(text):
+    for w in string.punctuation:
+        text= text.replace(w,"")
+    return text
+
+#Extract all the emojis from tweet text
+def extract_emojis(str):
+    return ' '.join(c for c in str if c in emoji.UNICODE_EMOJI)
+
+# Remove emojis from the text 
+def clean_emoji(text):
+    emoji_list = [c for c in text if c in emoji.UNICODE_EMOJI]
+    clean_text = ' '.join([str for str in text.split() if not any(i in str for i in emoji_list)])
+    return clean_text
+    
+# Convert emojis into text
+def emo_text(emo):
+    emo=emoji.demojize(emo)
+    for w in string.punctuation:
+        emo= emo.replace(w," ")
+    return emo
