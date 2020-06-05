@@ -1,0 +1,231 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+#import libraries 
+import pandas as pd
+import random
+import tweepy
+import json,csv
+import re, string
+import emoji
+import codecs
+from sklearn.utils import shuffle
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import SGDClassifier
+from textblob import TextBlob
+import urllib,urllib.parse,urllib.request
+
+#provide your twitter information here
+#Paromita Nitu
+#https://developer.twitter.com/en/apps/15993885 
+access_token = ""
+access_token_secret = ""
+consumer_key = ""
+consumer_secret = ""
+
+
+
+
+
+# Cleaning tweets 
+def strip_links(text):
+    link_regex    = re.compile('((https?):((//)|(\\\\))+([\w\d:#@%/;$()~_?\+-=\\\.&](#!)?)*)', re.DOTALL)
+    links         = re.findall(link_regex, text)
+    for link in links:
+        text = text.replace(link[0], ', ')
+    t = text.lower()
+    t = re.sub('\d+','',t)
+    t = re.sub(r'[^\w]', ' ', t)
+    t = ' '.join(t.split())
+    return t
+
+def strip_all_entities(text):
+    entity_prefixes = ['@']
+    for separator in  string.punctuation:
+        if separator not in entity_prefixes :
+            text = text.replace(separator,' ')
+    words = []
+    for word in text.split():
+        word = word.strip()
+        if word:
+            if word[0] not in entity_prefixes:
+                words.append(word)
+    return ' '.join(words)
+
+def remove_rt(text):
+    for separator in  string.punctuation:
+        text = text.replace(separator,' ')
+    words = []
+    for word in text.split():
+        word = word.strip()
+        if word:
+            if (word[0:2]!= "rt"):
+                words.append(word)
+    return ' '.join(words)
+
+def at_tagged(text):
+    mention_prefixes = ['@']
+    mention_End_prefixes=[";",":",",","/","_","-","""'""",'"',"€"]
+    words = []
+    for word in text.split():
+        word = word.strip()
+        if word:
+            if (word[0] in mention_prefixes):
+                word=word.replace(word[0]," ")
+                if (word[-1] in mention_End_prefixes):
+                    word=word.replace(word[-1]," ")
+                words.append(word)
+    return ','.join(words)
+
+def remove_punctuation(text):
+    for w in string.punctuation:
+        text= text.replace(w,"")
+    return text
+
+def extract_emojis(str):
+    return ' '.join(c for c in str if c in emoji.UNICODE_EMOJI)
+
+def emo_text(emo):
+    emo=emoji.demojize(emo)
+    for w in string.punctuation:
+        emo= emo.replace(w," ")
+    return emo
+
+def clean_emoji(text):
+    emoji_list = [c for c in text if c in emoji.UNICODE_EMOJI]
+    clean_text = ' '.join([str for str in text.split() if not any(i in str for i in emoji_list)])
+    return clean_text
+
+
+
+
+
+auth = tweepy.OAuthHandler(consumer_key, consumer_secret)    # Authorization to consumer key and consumer secret  
+auth.set_access_token(access_token, access_token_secret)     # Access to user's access key and access secret 
+api = tweepy.API(auth)                                       # Calling api  
+
+
+df = open('C:/Users/paromita/Desktop/Travel Recommendation/tag.csv', 'a', encoding='utf-8', newline="")
+wdf = csv.writer(df)
+wdf.writerow([' ',' '])
+# until date will be one day more than the file name 
+for page in tweepy.Cursor(api.search, q="#travel", lang='en',count=200).pages(20):
+                                         #travel, #traveling, #tourism 
+     i=0
+     for status in page:
+        s = page[i]
+        tweet = strip_links(s.text)
+        tag= "y"
+        wdf.writerow([tweet,tag])
+        i+=1
+df.close()
+
+def cfactor(n):
+    if n <= 0:
+        return 0
+    elif n<=10:
+        return 0.2
+    elif n<=30:
+        return 0.5
+    elif n<=100:
+        return 0.8
+    else:
+        return 1
+
+def tfactor(n):
+    return n/140.0
+
+
+#Twitter only allows access to a users most recent 3240 tweets with this method
+#SOURCE_CODE: https://gist.github.com/yanofsky/5436496#file-tweet_dumper-py-L3
+def get_all_tweets(user):
+
+    auth = tweepy.OAuthHandler(consumer_key, consumer_secret)    # Authorization to consumer key and consumer secret  
+    auth.set_access_token(access_token, access_token_secret)     # Access to user's access key and access secret 
+    api = tweepy.API(auth)                                       # Calling api  
+
+    filepath= open('C:/Users/paromita/Desktop/Travel Recommendation/Final_work/Tweet Data/Tweets/%s_tweets.csv' % user, 'w',encoding='utf-8', newline="")
+    file = csv.writer(filepath) 
+    file.writerow(["Tweet Id","Tweet Time","Tweet Text","Travel Tag","Emojis","Tagged/Mentioned","Hashtags","Tweet Favorite Count","Is Retweet","Tweet Retweet Count","URL"])                                                      
+    
+    tagpath= open('C:/Users/paromita/Desktop/Travel Recommendation/Final_work/Tweet Data/Tags/%s_tags.csv' % user, 'w',encoding='utf-8', newline="")
+    tagfile = csv.writer(tagpath) 
+    tagfile.writerow(["Date","Travel text","Tweet Score"])                                                      
+
+    alltweets = []                                                                        #initialize a list to hold all the tweepy Tweets
+    new_tweets = api.user_timeline(screen_name = user,count=200)                          #make initial request for most recent tweets (200 is the maximum allowed count)
+    alltweets.extend(new_tweets)                                                          #save most recent tweets
+    
+
+    oldest = alltweets[-1].id - 1                                                         #save the id of the oldest tweet less one
+    while len(new_tweets) > 0:                                                            #keep grabbing tweets until there are no tweets left to grab
+                                                                                          #print "getting tweets before %s" % (oldest)
+        new_tweets = api.user_timeline(screen_name = user,count=200,max_id=oldest)        #all subsiquent requests use the max_id param to prevent duplicates
+        alltweets.extend(new_tweets)                                                      #save most recent tweets
+        oldest = alltweets[-1].id - 1                                                     #update the id of the oldest tweet less one
+    
+    for tweet in alltweets:
+        if (tweet.lang=='en'):
+            tweet.id=tweet.id_str
+            text=remove_punctuation(clean_emoji(remove_rt(strip_all_entities(strip_links(tweet.text)))))    
+            tag = SGDClass.predict(tv.transform([text]))
+            traveltext=''
+            score=''
+            try:
+                if tag in ['y']:
+                    ts = 0.0
+                    ts += cfactor(tweet.favorite_count)
+                    ts += cfactor(tweet.retweet_count)
+                    ts += len(tweet.entities['hashtags']) * 0.3
+                    ts += len(tweet.entities['urls']) * 0.4
+                    ts += len(tweet.entities['user_mentions']) * 0.3
+                    try:
+                        ts += len(tweet.entities['media']) * 0.6
+                    except:
+                        pass
+                    ts += tfactor(len(text))
+                    score=ts
+                    traveltext=text
+                if tag in ['n']:
+                    pass
+                
+
+            except:
+                pass
+                
+            tag_at=at_tagged(tweet.text)
+            emojis=emo_text(extract_emojis(tweet.text))
+            date=tweet.created_at  
+            fav_count=tweet.favorite_count 
+
+            url = ''
+            try:
+                url = tweet.entities['urls'][0]['expanded_url']                
+            except:
+                 pass  
+            hashtags = ''
+            try:
+                hashtags = tweet.entities['hashtags']
+                hashtags =[hashtags[i]["text"] for i in range(len(hashtags))]
+                hashtags=remove_punctuation(str(hashtags).strip('[]'))
+                
+            except:
+                 pass
+                
+            if (tweet.text[0:2] != 'RT'):
+                retweet= "No"
+                reT_count=tweet.retweet_count
+                
+            else:
+                retweet= "Yes"
+                reT_count=tweet.retweet_count                                          #Twitter only allows access to a users most recent 3240 tweets with this method
+            
+            #transform the tweepy tweets into a 2D array that will populate the csv
+            outtweets = [tweet.id,date,text,tag,emojis,tag_at,hashtags,fav_count,retweet,reT_count,url]
+            file.writerow(outtweets)
+            if tag in ['y']:
+                outtags= [date,traveltext,score]
+                tagfile.writerow(outtags)
+    pass
+
+
